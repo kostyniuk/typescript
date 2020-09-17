@@ -1,0 +1,27 @@
+// The protected modifier acts much like the private modifier with the exception that members declared protected can also be accessed within deriving classes.
+
+export {};
+
+class Person {
+  protected name: string;
+  constructor(name: string) {
+    this.name = name;
+  }
+}
+
+class Employee extends Person {
+  private department: string;
+  //name
+  constructor(name: string, department: string) {
+    super(name);
+    this.department = department;
+  }
+
+  public getElevatorPitch() {
+    return `Hello, my name is ${this.name} and I work in ${this.department}.`;
+  }
+}
+
+let howard = new Employee('Howard', 'Sales');
+console.log(howard.getElevatorPitch());
+// console.log(howard.name); //WON'T WORK AS name ACCESSIBLE ONLY BY THE BASE CLASS AND DERIVING CLASSES
