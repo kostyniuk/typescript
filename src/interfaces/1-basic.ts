@@ -1,3 +1,5 @@
+export {};
+
 interface Person {
   username: string;
   fullname: string;
