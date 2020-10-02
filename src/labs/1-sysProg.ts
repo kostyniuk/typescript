@@ -75,7 +75,7 @@ class Process implements IProcess {
     this.workingSet = Math.ceil(this.numOfVirtualPages / 3)
   }
 
-  public getMemory(): void {
+  private getMemory(): void {
 
     const accessType = generateAccessType();
 
@@ -88,7 +88,10 @@ class Process implements IProcess {
       selectedVirtualPage.m = accessType === 'MODIFY' ? 1 : 0
 
       if (selectedVirtualPage.p) {
+        selectedVirtualPage.r = 1;
         console.log('ALREADY USING A PAGE BLOCK')
+        console.log({ vp: this.virtualPages })
+
         this.accessCount++;
         return;
       } else {
@@ -112,6 +115,19 @@ class Process implements IProcess {
 
     console.log({ vp: this.virtualPages })
 
+  }
+
+  private resetR(): void {
+    console.log('RESETING R')
+    this.virtualPages = this.virtualPages.map(page => {
+      page.r = 0;
+      return page
+    })
+  }
+
+  public doSomethingWithMemory(): void {
+    this.getMemory();
+    if (this.accessCount % this.accessToReset === 0) this.resetR()
   }
 
 }
@@ -156,11 +172,13 @@ const sizePageBlock = 4096;
 const memory = new PhysicalMemory(numPhysicalPages, sizePageBlock)
 const process1 = new Process(5, memory);
 
-process1.getMemory()
-process1.getMemory()
-process1.getMemory()
-process1.getMemory()
-process1.getMemory()
+process1.doSomethingWithMemory()
+process1.doSomethingWithMemory()
+process1.doSomethingWithMemory()
+process1.doSomethingWithMemory()
+process1.doSomethingWithMemory()
+process1.doSomethingWithMemory()
+process1.doSomethingWithMemory()
 // process1.getMemory()
 // process1.getMemory()
 
