@@ -90,27 +90,41 @@ class FileSystem implements IFileSystem {
   createFile(name: string): void {
     const size = getRandomIntRange(1, 4 * this.blockSize) // selected 4 just for testing purposes
     const blocks = Math.ceil(size / this.blockSize);
-    let blocksIndexes = []
+    let blocksIndexes = [];
+    let busy = true;
+    let index: number;
     for (let i = 0; i < blocks; i++) {
-      const index = getRandomIntRange(0, this.blocksQuantity)
-      this.memory[index] = this.generateData()
-      this.bitMap[index] = 1;
-      blocksIndexes.push(index);
+      while (busy) {
+        index = getRandomIntRange(0, this.blocksQuantity);
+        // if the block is already in use
+        if (!this.memory[index].bits.filter(bit => bit !== 0).length) {
+          console.log({ index }, this.memory[index])
+          this.memory[index] = this.generateData();
+          busy = false;
+        }
+      }
+      this.bitMap[index!] = 1;
+      blocksIndexes.push(index!);
+      busy = true;
     }
     const file: IOrdinarFileDescriptor = { type: 'ordinary', name, size, linksNumber: 0, blockMap: { links: blocksIndexes } }
     console.log({ file })
     this.files.push({ descriptor: file })
   }
 
-  openFile(name: string): number {
-    const selectedFile = this.files.filter(file => file.descriptor.name === name);
-    const fd = getRandomIntRange(0, 1000)
-    selectedFile[0].descriptor.fd = fd
-    this.files.map(file => {
-      if (file.descriptor.name === name) return selectedFile;
-      return file
-    })
-    return fd
+  openFile(name: string): number | void {
+    if (this.files.length) {
+      const selectedFile = this.files.filter(file => file.descriptor.name === name);
+      if (selectedFile.length) {
+        const fd = getRandomIntRange(0, 1000)
+        selectedFile[0].descriptor.fd = fd
+        this.files.map(file => {
+          if (file.descriptor.name === name) return selectedFile;
+          return file
+        })
+        return fd
+      }
+    }
   }
 
   closeFile(fd: number) {
@@ -122,9 +136,70 @@ class FileSystem implements IFileSystem {
     })
   }
 
-  // private addToDescriptor(): void {
+  readFile(fd: number, offset: number): void {
+    const file = this.files.filter(file => file.descriptor.fd === fd)[0] as { descriptor: IOrdinarFileDescriptor };
+    const { blockMap } = file.descriptor;
+    console.log({ links: blockMap.links })
+    const block = blockMap.links[offset];
+    if (block) {
+      console.log(this.memory[block].bits.join(' '))
+      return;
+    }
+    console.log('Too large offset');
+  }
 
-  // }
+  writeFile(fd: number, offset: number, size: number) {
+    const file = this.files.filter(file => file.descriptor.fd === fd)[0] as { descriptor: IOrdinarFileDescriptor };
+    const { blockMap } = file.descriptor;
+    const block = blockMap.links[offset];
+    let newDataInBlock = (new Array(this.blockSize)).fill(0)
+    if (block) {
+      for (let i = 0; i < size; i++) newDataInBlock[i] = getRandomIntRange(1, 9)
+      console.log(this.memory[block].bits.join(' '))
+      this.memory[block].bits = newDataInBlock
+      console.log(this.memory[block].bits.join(' '))
+      if (size > this.blockSize) {
+        console.log('ERROR: Too much data')
+      }
+    } else {
+      console.log('ERROR: This file consists of fewer quantity of blocks')
+    }
+    return;
+  }
+
+  link(name1: string, name2: string) {
+
+    let newFile: IOrdinarFileDescriptor
+    let index: number;
+    let busy = true;
+    this.files = this.files.map(file => {
+      if (file.descriptor.name === name2) {
+        let targetFile = file as { descriptor: IOrdinarFileDescriptor };
+        while (busy) {
+          index = getRandomIntRange(0, this.blocksQuantity);
+          // if the block is already in use
+          if (!this.memory[index].bits.filter(bit => bit !== 0).length) {
+            this.memory[index] = this.generateData();
+            this.bitMap[index] = 1;
+            busy = false;
+          }
+        }
+
+        let updatedBlockMap = JSON.parse(JSON.stringify(targetFile.descriptor.blockMap));
+        updatedBlockMap.links.unshift(index); // links' blocks first, the last 4 is always from the original file
+        targetFile.descriptor.linksNumber++;
+        newFile = { type: 'ordinary', name: name1, size: 1, linksNumber: 0, blockMap: updatedBlockMap } // size - 1 block is the smallest i can achieve
+        return targetFile;
+      }
+      return file
+    })
+    if (newFile!) {
+      this.files.push({ descriptor: newFile! })
+      console.log('Linked')
+    } else {
+      console.log('Not Linked')
+    }
+  }
 
   private generateData(): IBlock {
     let block: IBlock = { bits: (new Array(this.blockSize)).fill(0) };
@@ -208,13 +283,13 @@ const handleMultiCommands = (str: string): [string[], string] => {
           console.log('ERROR: No name provided')
           break;
         }
-
         if (fs!) {
           const fd = fs!.openFile(name)
           console.log(fd)
         } else {
           console.log('ERROR: File system isn\'t mounted')
         }
+
         break;
       }
 
@@ -230,6 +305,24 @@ const handleMultiCommands = (str: string): [string[], string] => {
         } else {
           console.log('ERROR: File system isn\'t mounted')
         }
+        break;
+      }
+
+      case 'read': {
+        const [fd, offset] = params;
+        fs!.readFile(Number(fd), Number(offset))
+        break;
+      }
+
+      case 'write': {
+        const [fd, offset, size] = params;
+        fs!.writeFile(Number(fd), Number(offset), Number(size));
+        break;
+      }
+
+      case 'link': {
+        const [name1, name2] = params;
+        fs!.link(name1, name2);
         break;
       }
 
