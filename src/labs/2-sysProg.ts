@@ -201,6 +201,23 @@ class FileSystem implements IFileSystem {
     }
   }
 
+  unlink(name: string) {
+    const file = this.files.filter(file => file.descriptor.name === name)[0] as { descriptor: IOrdinarFileDescriptor };
+
+    if (file) {
+      const ownBlockIndex = file.descriptor.blockMap.links.shift();
+      console.log({ ownBlockIndex })
+      this.eraseBlock(ownBlockIndex!)
+      this.files = this.files.filter(file => file.descriptor.name !== name)
+    }
+
+  }
+
+  private eraseBlock(index: number) {
+    this.memory[index] = { bits: (new Array(this.blockSize)).fill(0) };
+    this.bitMap[index] = 0;
+  }
+
   private generateData(): IBlock {
     let block: IBlock = { bits: (new Array(this.blockSize)).fill(0) };
     block.bits = block.bits.map(_ => getRandomIntRange(0, 9))
@@ -323,6 +340,12 @@ const handleMultiCommands = (str: string): [string[], string] => {
       case 'link': {
         const [name1, name2] = params;
         fs!.link(name1, name2);
+        break;
+      }
+
+      case 'unlink': {
+        const [name] = params;
+        fs!.unlink(name);
         break;
       }
 
