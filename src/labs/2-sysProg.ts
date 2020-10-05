@@ -15,16 +15,15 @@ const getRandomIntRange = (min: number, max: number): number => {
   return Math.round(Math.random() * (max - min) + min);
 }
 
-type FileType = 'ordinar' | 'directory'
+type FileType = 'ordinary' | 'directory'
+
+type IFileDescriptor = IOrdinarFileDescriptor | IDirectoryFileDescriptor;
 
 interface IBlock {
   bits: number[]
 }
 
 interface IBlockMap {
-  link1: number,
-  link2: number,
-  link3: number,
   links: number[]
 }
 
@@ -33,17 +32,19 @@ interface IFileLink {
   descriptor: IFileDescriptor
 }
 
-interface IFileDescriptor {
+interface IFileDescriptorBasic {
+  name: string
   type: FileType
   linksNumber: number
   size: number
+  fd?: number
 }
 
-interface IOrdinarFileDescriptor extends IFileDescriptor {
+interface IOrdinarFileDescriptor extends IFileDescriptorBasic {
   blockMap: IBlockMap
 }
 
-interface IDirectoryFileDescriptor extends IFileDescriptor {
+interface IDirectoryFileDescriptor extends IFileDescriptorBasic {
   data: IFileLink[]
 }
 
@@ -62,6 +63,7 @@ interface IFileSystem {
 }
 
 class FileSystem implements IFileSystem {
+
   size: number
   blocksQuantity: number
   blockSize: number
@@ -88,14 +90,41 @@ class FileSystem implements IFileSystem {
   createFile(name: string): void {
     const size = getRandomIntRange(1, 4 * this.blockSize) // selected 4 just for testing purposes
     const blocks = Math.ceil(size / this.blockSize);
+    let blocksIndexes = []
     for (let i = 0; i < blocks; i++) {
       const index = getRandomIntRange(0, this.blocksQuantity)
       this.memory[index] = this.generateData()
       this.bitMap[index] = 1;
-      console.log({ size, blocks, index, bits: this.generateData() })
+      blocksIndexes.push(index);
     }
-    console.log(name)
+    const file: IOrdinarFileDescriptor = { type: 'ordinary', name, size, linksNumber: 0, blockMap: { links: blocksIndexes } }
+    console.log({ file })
+    this.files.push({ descriptor: file })
   }
+
+  openFile(name: string): number {
+    const selectedFile = this.files.filter(file => file.descriptor.name === name);
+    const fd = getRandomIntRange(0, 1000)
+    selectedFile[0].descriptor.fd = fd
+    this.files.map(file => {
+      if (file.descriptor.name === name) return selectedFile;
+      return file
+    })
+    return fd
+  }
+
+  closeFile(fd: number) {
+    this.files.map(file => {
+      if (file.descriptor.fd === fd) {
+        delete file.descriptor.fd;
+      }
+      return file
+    })
+  }
+
+  // private addToDescriptor(): void {
+
+  // }
 
   private generateData(): IBlock {
     let block: IBlock = { bits: (new Array(this.blockSize)).fill(0) };
@@ -105,10 +134,7 @@ class FileSystem implements IFileSystem {
 }
 
 const handleMultiCommands = (str: string): [string[], string] => {
-  console.log({ str })
-
   const [command, ...params] = str.split(' ')
-
   return [params, command]
 }
 
@@ -127,8 +153,6 @@ const handleMultiCommands = (str: string): [string[], string] => {
     if (answer.split(' ').length > 1) {
       [params, answer] = handleMultiCommands(answer)
     }
-
-    console.log({ answer, params })
 
     switch (answer) {
 
@@ -156,6 +180,11 @@ const handleMultiCommands = (str: string): [string[], string] => {
         break;
       }
 
+      case 'ls': {
+        if (mounted) fs!.files.map((file, i) => console.log(`File ${file.descriptor.name} with its descriptor ${i}`));
+        break;
+      }
+
       case 'create': {
         const name = params[0]
         if (!name) {
@@ -173,6 +202,37 @@ const handleMultiCommands = (str: string): [string[], string] => {
         break;
       }
 
+      case 'open': {
+        const name = params[0]
+        if (!name) {
+          console.log('ERROR: No name provided')
+          break;
+        }
+
+        if (fs!) {
+          const fd = fs!.openFile(name)
+          console.log(fd)
+        } else {
+          console.log('ERROR: File system isn\'t mounted')
+        }
+        break;
+      }
+
+      case 'close': {
+        const fd = Number(params[0]);
+        if (!fd) {
+          console.log('ERROR: No fd provided')
+          break;
+        }
+
+        if (fs!) {
+          fs!.closeFile(fd);
+        } else {
+          console.log('ERROR: File system isn\'t mounted')
+        }
+        break;
+      }
+
       case 'exit':
         exit = true
         console.log('Exited the fs');
@@ -181,6 +241,7 @@ const handleMultiCommands = (str: string): [string[], string] => {
       default:
         console.log(fs!)
         fs!.memory.map(el => console.log(el))
+        fs!.files.map(el => console.log(el.descriptor))
         console.log('Unknown command')
     }
 
