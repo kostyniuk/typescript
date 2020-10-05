@@ -9,6 +9,7 @@ const getRandomIntRange = (min: number, max: number): number => {
 
 const generateAccessType = (): accessTypes => Math.random() > 0.5 ? 'MODIFY' : 'READ'
 
+
 interface VirtualPage {
   p: trigger,
   r: trigger,
@@ -18,6 +19,7 @@ interface VirtualPage {
 
 interface PhysicalPage {
   index: number;
+  pid: number;
   indexOfVP: number;
 }
 
@@ -75,7 +77,7 @@ class Process implements IProcess {
     this.workingSet = Math.ceil(this.numOfVirtualPages / 3)
   }
 
-  private getMemory(): void {
+  private getMemory(offset: number): void {
 
     const accessType = generateAccessType();
 
@@ -84,37 +86,55 @@ class Process implements IProcess {
       const index = getRandomIntRange(0, this.workingSet - 1);
       const selectedVirtualPage = this.virtualPages[index]
       console.log({ selectedVirtualPage, index, accessType })
-
-      selectedVirtualPage.m = accessType === 'MODIFY' ? 1 : 0
-
       if (selectedVirtualPage.p) {
-        selectedVirtualPage.r = 1;
-        console.log('ALREADY USING A PAGE BLOCK')
-        console.log({ vp: this.virtualPages })
-
+        this.setAttributes(selectedVirtualPage, accessType)
+        this.virtualPages[index] = selectedVirtualPage;
         this.accessCount++;
+        this.logAppeal(index, offset, this.virtualPages[index].ppn)
         return;
       } else {
-        if (memory.freePagesQuantity) {
-          memory.usePageBlock(index)
-          selectedVirtualPage.p = 1
-          selectedVirtualPage.r = 1
-          console.log({ a: memory.busy, b: memory.free })
-          this.virtualPages[index] = selectedVirtualPage;
-          this.accessCount++;
-        } else {
-          // page fault
-        }
+        this.locateMemory(selectedVirtualPage, index, this.virtualPages, this.memory)
+        this.setAttributes(selectedVirtualPage, accessType)
+        this.accessCount++;
+        this.logAppeal(index, offset, this.virtualPages[index].ppn)
+        return;
       }
-
-
     } else {
       // average pages
-      console.log('Not from the working set')
+      const index = getRandomIntRange(this.workingSet, this.numOfVirtualPages - 1);
+      const selectedVirtualPage = this.virtualPages[index]
+
+      if (!selectedVirtualPage.p) {
+        this.locateMemory(selectedVirtualPage, index, this.virtualPages, this.memory);
+        this.setAttributes(selectedVirtualPage, accessType)
+        this.virtualPages[index] = selectedVirtualPage;
+      } else {
+        this.setAttributes(selectedVirtualPage, accessType);
+      }
+      this.accessCount++;
+      this.logAppeal(index, offset, this.virtualPages[index].ppn)
+      return;
     }
+  }
 
-    console.log({ vp: this.virtualPages })
+  private setAttributes(vp: VirtualPage, accessType: accessTypes): void {
+    vp.p = 1;
+    if (!vp.m) vp.m = accessType === 'MODIFY' ? 1 : 0
+    if (!vp.r) vp.r = accessType === 'READ' ? 1 : 0
+  }
 
+  private locateMemory(currentVP: VirtualPage, currentIndex: number, vps: VirtualPage[], phMemory: PhysicalMemory): void {
+    if (phMemory.freePagesQuantity) {
+      const pb = memory.usePageBlock(this.id, currentIndex)
+      currentVP.p = 1;
+      currentVP.ppn = pb
+      vps[currentIndex] = currentVP;
+      this.accessCount++;
+    } else {
+      const nru = new NRU(currentVP, currentIndex)
+      nru.divideVPs(this.virtualPages)
+      nru.execute(this.virtualPages, this.memory);
+    }
   }
 
   private resetR(): void {
@@ -126,8 +146,17 @@ class Process implements IProcess {
   }
 
   public doSomethingWithMemory(): void {
-    this.getMemory();
+    this.getMemory(getRandomIntRange(0, this.memory.sizeOfPageBlock));
     if (this.accessCount % this.accessToReset === 0) this.resetR()
+    // this.logState()
+  }
+
+  logAppeal(vpIndex: number, offset: number, IndexOfPB: number | 'x'): void {
+    console.log({ virtualPage: vpIndex, offset, pageBlock: IndexOfPB })
+  }
+
+  public logState(): void {
+    console.log({ vp: this.virtualPages, pid: this.id })
   }
 
 }
@@ -147,21 +176,109 @@ class PhysicalMemory implements IPhysicalMemory {
   }
 
   private setInitialState(): void {
-    for (let i = 0; i < this.numOfPageBlocks; i++) this.free.push({ index: i, indexOfVP: -1 })
+    for (let i = 0; i < this.numOfPageBlocks; i++) this.free.push({ index: i, pid: -1, indexOfVP: -1 })
   }
 
   get freePagesQuantity(): number {
     return this.free.length;
   }
 
-  usePageBlock(indexOfVP: number): void {
-    if (this.free.length) {
+  usePageBlock(pid: number, indexOfVP: number): number {
+    if (this.free.length) { // redundant, already peformed, just to know for sure
       const pageBlock: PhysicalPage = this.free.shift() as PhysicalPage
-      this.busy.push({ ...pageBlock, indexOfVP })
-    } else {
-      // algorithm
+      this.busy.push({ ...pageBlock, pid, indexOfVP })
+      return pageBlock.index
+    }
+    return -1
+  }
+}
+
+interface INRU {
+  vp: VirtualPage;
+  vpIndex: number,
+  Class0: number[],
+  Class1: number[],
+  Class2: number[],
+  Class3: number[]
+}
+
+class NRU implements INRU {
+  vp: VirtualPage;
+  vpIndex;
+  Class0: number[] = [];
+  Class1: number[] = [];
+  Class2: number[] = [];
+  Class3: number[] = [];
+
+  constructor(vp: VirtualPage, index: number) {
+    this.vp = vp;
+    this.vpIndex = index
+  }
+
+  divideVPs(vps: VirtualPage[]): void {
+    vps.map((vp, index) => {
+      if (vp.ppn === 'x') return vp;
+      const { r, m } = vp
+      if (r) {
+        if (m) {
+          this.Class3.push(index)
+        } else {
+          this.Class2.push(index)
+        }
+      } else {
+        if (m) {
+          this.Class1.push(index)
+        } else {
+          this.Class0.push(index)
+        }
+      }
+      return vp;
+    })
+    console.log({ class0: this.Class0, class1: this.Class1, class2: this.Class2, class3: this.Class3 })
+  }
+
+  execute(vps: VirtualPage[], memory: PhysicalMemory): void {
+
+    let targetClass = this.Class3
+
+    if (this.Class0.length) {
+      targetClass = this.Class0
+    } else if (this.Class1.length) {
+      targetClass = this.Class1
+    } else if (this.Class2.length) {
+      targetClass = this.Class2
     }
 
+    console.log('BEFORE REPLACEMENT');
+    console.log(vps, memory.busy)
+
+    const victim = targetClass.shift() as number;
+    const victimPage = vps[victim];
+
+    const { ppn } = victimPage
+
+    victimPage.p = 0;
+    victimPage.m = 0;
+    victimPage.r = 0;
+    victimPage.ppn = 'x'
+
+    vps[victim] = victimPage;
+
+    console.log(`REPLACING VP №${victim} WITH №${this.vpIndex}`)
+
+    this.vp.p = 1;
+    this.vp.ppn = ppn;
+
+    vps[this.vpIndex] = this.vp;
+
+    memory.busy = memory.busy.map(block => {
+      if (block.index === ppn) block.indexOfVP = this.vpIndex;
+      return block
+    })
+
+    console.log('AFTER REPLACEMENT');
+    console.log(vps, memory.busy)
+    return;
   }
 
 }
@@ -171,16 +288,42 @@ const sizePageBlock = 4096;
 
 const memory = new PhysicalMemory(numPhysicalPages, sizePageBlock)
 const process1 = new Process(5, memory);
+const process2 = new Process(5, memory);
+const process3 = new Process(5, memory);
 
-process1.doSomethingWithMemory()
-process1.doSomethingWithMemory()
-process1.doSomethingWithMemory()
-process1.doSomethingWithMemory()
-process1.doSomethingWithMemory()
-process1.doSomethingWithMemory()
-process1.doSomethingWithMemory()
-// process1.getMemory()
-// process1.getMemory()
+interface IProcessExecution {
+  process: Process,
+  ticks: number,
+  [propName: string]: any;
+  // finished: boolean
+}
 
-// console.log({ process1, vp: process1.virtualPages, vpQuantity: process1.numOfVirtualPages, memory, free: memory.free })
+interface IprocessExecutionFn {
+  (processes: IProcessExecution[]): void;
+}
 
+let processExecution: IprocessExecutionFn;
+
+processExecution = (processes = []) => {
+  let executed = false
+
+  processes.map(process => process.finished = false)
+
+  while (!executed) {
+    processes = processes.map(process => {
+
+      if (process.finished) return process;
+
+      process.process.doSomethingWithMemory();
+      process.ticks -= 1;
+
+      if (!process.ticks) process.finished = true;
+
+      return process;
+    })
+
+    if (!processes.map(process => process.finished).filter(num => !num).length) executed = true
+  }
+}
+
+processExecution([{ process: process1, ticks: 5 }, { process: process2, ticks: 7 }, { process: process3, ticks: 6 }])
