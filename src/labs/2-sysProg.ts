@@ -213,6 +213,10 @@ class FileSystem implements IFileSystem {
 
   }
 
+  truncate(name: string, newSize: string) {
+    throw new Error("Method not implemented.");
+  }
+
   private eraseBlock(index: number) {
     this.memory[index] = { bits: (new Array(this.blockSize)).fill(0) };
     this.bitMap[index] = 0;
@@ -346,6 +350,12 @@ const handleMultiCommands = (str: string): [string[], string] => {
       case 'unlink': {
         const [name] = params;
         fs!.unlink(name);
+        break;
+      }
+
+      case 'truncate': {
+        const [name, newSize] = params;
+        fs!.truncate(name, newSize);
         break;
       }
 
