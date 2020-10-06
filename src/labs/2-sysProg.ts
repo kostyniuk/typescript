@@ -108,7 +108,7 @@ class FileSystem implements IFileSystem {
         index = getRandomIntRange(0, this.blocksQuantity - 1);
         // if the block is already in use
         // console.log({ index })
-        if (!this.memory[index].bits.filter(bit => bit !== 0).length) {
+        if (!this.bitMap[index]) {
           // console.log({ index }, this.memory[index])
           this.memory[index] = this.generateData();
           busy = false;
@@ -149,7 +149,7 @@ class FileSystem implements IFileSystem {
   readFile(fd: number, offset: number, size: number): void {
     const file = this.files.filter(file => file.descriptor.fd === fd)[0] as { descriptor: IOrdinarFileDescriptor };
     const { blockMap } = file.descriptor;
-    console.log({ links: blockMap.links })
+    // console.log({ links: blockMap.links })
     const block = blockMap.links[offset];
     if (block) {
       const data = this.memory[block].bits
@@ -217,7 +217,7 @@ class FileSystem implements IFileSystem {
 
     if (file) {
       const ownBlockIndex = file.descriptor.blockMap.links.shift();
-      console.log({ ownBlockIndex })
+      // console.log({ ownBlockIndex })
       this.eraseBlock(ownBlockIndex!)
       this.files = this.files.filter(file => file.descriptor.name !== name)
     }
@@ -316,8 +316,6 @@ class FileSystem implements IFileSystem {
         this.bitMap[index] = 1;
       }
     }
-
-    console.log({ indexes })
 
     return indexes
   }
