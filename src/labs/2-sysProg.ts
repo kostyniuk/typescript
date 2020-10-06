@@ -15,6 +15,10 @@ const getRandomIntRange = (min: number, max: number): number => {
   return Math.round(Math.random() * (max - min) + min);
 }
 
+const readNelements = (arr: number[], n: number): number[] => {
+  return arr.slice(0, n);
+}
+
 type FileType = 'ordinary' | 'directory'
 
 type IFileDescriptor = IOrdinarFileDescriptor | IDirectoryFileDescriptor;
@@ -97,6 +101,8 @@ class FileSystem implements IFileSystem {
       while (busy) {
         index = getRandomIntRange(0, this.blocksQuantity);
         // if the block is already in use
+        // here bug
+        console.log({ index })
         if (!this.memory[index].bits.filter(bit => bit !== 0).length) {
           console.log({ index }, this.memory[index])
           this.memory[index] = this.generateData();
@@ -136,13 +142,14 @@ class FileSystem implements IFileSystem {
     })
   }
 
-  readFile(fd: number, offset: number): void {
+  readFile(fd: number, offset: number, size: number): void {
     const file = this.files.filter(file => file.descriptor.fd === fd)[0] as { descriptor: IOrdinarFileDescriptor };
     const { blockMap } = file.descriptor;
     console.log({ links: blockMap.links })
     const block = blockMap.links[offset];
     if (block) {
-      console.log(this.memory[block].bits.join(' '))
+      const data = this.memory[block].bits
+      console.log(readNelements(data, size).join(' '))
       return;
     }
     console.log('Too large offset');
@@ -213,14 +220,23 @@ class FileSystem implements IFileSystem {
 
   }
 
-  truncate(name: string, newSize: string) {
-    throw new Error("Method not implemented.");
+  truncate(name: string, newSize: number) {
+    let index = -1;
+    let busy = true;
+
+    console.log({ index, busy, name, newSize })
+
   }
 
   private eraseBlock(index: number) {
     this.memory[index] = { bits: (new Array(this.blockSize)).fill(0) };
     this.bitMap[index] = 0;
   }
+
+  // private attachBlock(index: number) {
+  //   this.memory[index] = this.generateData();
+  //   this.bitMap[index] = 1
+  // }
 
   private generateData(): IBlock {
     let block: IBlock = { bits: (new Array(this.blockSize)).fill(0) };
@@ -330,8 +346,8 @@ const handleMultiCommands = (str: string): [string[], string] => {
       }
 
       case 'read': {
-        const [fd, offset] = params;
-        fs!.readFile(Number(fd), Number(offset))
+        const [fd, offset, size] = params;
+        fs!.readFile(Number(fd), Number(offset), Number(size))
         break;
       }
 
@@ -355,7 +371,7 @@ const handleMultiCommands = (str: string): [string[], string] => {
 
       case 'truncate': {
         const [name, newSize] = params;
-        fs!.truncate(name, newSize);
+        fs!.truncate(name, Number(newSize));
         break;
       }
 
