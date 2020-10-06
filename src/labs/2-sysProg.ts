@@ -99,7 +99,7 @@ class FileSystem implements IFileSystem {
     let index: number;
     for (let i = 0; i < blocks; i++) {
       while (busy) {
-        index = getRandomIntRange(0, this.blocksQuantity);
+        index = getRandomIntRange(0, this.blocksQuantity - 1);
         // if the block is already in use
         // here bug
         console.log({ index })
@@ -223,8 +223,13 @@ class FileSystem implements IFileSystem {
   truncate(name: string, newSize: number) {
     let index = -1;
     let busy = true;
+    let initialSize = this.files.filter(file => file.descriptor.name === name)[0].descriptor.size
 
-    console.log({ index, busy, name, newSize })
+    console.log({ index, busy, name, newSize, initialSize })
+
+  }
+
+  private expandFile(): void {
 
   }
 
