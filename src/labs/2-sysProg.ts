@@ -224,24 +224,50 @@ class FileSystem implements IFileSystem {
     let index = -1;
     let busy = true;
     let initialSize = this.files.filter(file => file.descriptor.name === name)[0].descriptor.size
+    let intialBlocks = initialSize % this.blockSize ? Math.ceil(initialSize / this.blockSize) : initialSize / this.blockSize;
+
 
     if (newSize === initialSize) return;
 
     if (newSize > initialSize) {
-      this.expandFile(name, initialSize, newSize);
+      this.expandFile(name, intialBlocks, newSize);
       return;
     }
 
-    this.reduceFile(name, initialSize, newSize)
+    this.reduceFile(name, newSize)
 
   }
 
-  private expandFile(name: string, size: number, newSize: number): void {
-    const requiredBlocks = this.calcBlocks(newSize)
-    console.log({ requiredBlocks })
+  private expandFile(name: string, intialBlocks: number, newSize: number): void {
+    const requiredBlocks = this.calcBlocks(newSize) - intialBlocks;
+    const freeBlocks = this.selectFreeBlocks(requiredBlocks)
+
+    this.files = this.files.map(file => {
+      const current = file as { descriptor: IOrdinarFileDescriptor };
+
+      if (!freeBlocks.length) {
+        const lastBlock = current.descriptor.blockMap.links[intialBlocks - 1]
+        if (newSize % this.blockSize) {
+          const howManyFree = this.blockSize - newSize % this.blockSize;
+          for (let i = howManyFree, j = this.blockSize - 1; i > 0; i--, j--) {
+            this.memory[lastBlock].bits[j] = 0
+          }
+        }
+      } else {
+        if (current.descriptor.name === name) {
+          current.descriptor.blockMap.links.push(...freeBlocks)
+        }
+      }
+      return current
+    })
+
+    freeBlocks.map(index => {
+      this.memory[index].bits = (new Array(this.blockSize)).fill(0)
+      this.bitMap[index] = 1;
+    })
   }
 
-  private reduceFile(name: string, size: number, newSize: number): void {
+  private reduceFile(name: string, newSize: number): void {
     const requiredBlocks = this.calcBlocks(newSize)
 
     this.files = this.files.map(file => {
@@ -263,7 +289,7 @@ class FileSystem implements IFileSystem {
         }
 
         current.descriptor.size = newSize;
-      
+
       }
       return current;
     })
@@ -277,6 +303,23 @@ class FileSystem implements IFileSystem {
   private eraseBlock(index: number) {
     this.memory[index] = { bits: (new Array(this.blockSize)).fill(0) };
     this.bitMap[index] = 0;
+  }
+
+  private selectFreeBlocks(n: number): number[] {
+
+    let indexes: number[] = [];
+
+    while (indexes.length !== n) {
+      const index = getRandomIntRange(0, this.blocksQuantity - 1);
+      if (!this.bitMap[index]) {
+        indexes.push(index)
+        this.bitMap[index] = 1;
+      }
+    }
+
+    console.log({ indexes })
+
+    return indexes
   }
 
   // private attachBlock(index: number) {
