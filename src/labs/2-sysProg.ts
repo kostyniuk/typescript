@@ -225,12 +225,53 @@ class FileSystem implements IFileSystem {
     let busy = true;
     let initialSize = this.files.filter(file => file.descriptor.name === name)[0].descriptor.size
 
-    console.log({ index, busy, name, newSize, initialSize })
+    if (newSize === initialSize) return;
+
+    if (newSize > initialSize) {
+      this.expandFile(name, initialSize, newSize);
+      return;
+    }
+
+    this.reduceFile(name, initialSize, newSize)
 
   }
 
-  private expandFile(): void {
+  private expandFile(name: string, size: number, newSize: number): void {
+    const requiredBlocks = this.calcBlocks(newSize)
+    console.log({ requiredBlocks })
+  }
 
+  private reduceFile(name: string, size: number, newSize: number): void {
+    const requiredBlocks = this.calcBlocks(newSize)
+
+    this.files = this.files.map(file => {
+      const current = file as { descriptor: IOrdinarFileDescriptor };
+      if (current.descriptor.name === name) {
+
+        while (requiredBlocks !== current.descriptor.blockMap.links.length) {
+          const index = current.descriptor.blockMap.links.pop()
+          this.eraseBlock(index!)
+        }
+
+        const lastBlock = current.descriptor.blockMap.links[requiredBlocks - 1]
+
+        if (newSize % this.blockSize) {
+          const howManyFree = this.blockSize - newSize % this.blockSize;
+          for (let i = howManyFree, j = this.blockSize - 1; i > 0; i--, j--) {
+            this.memory[lastBlock].bits[j] = 0
+          }
+        }
+
+        current.descriptor.size = newSize;
+      
+      }
+      return current;
+    })
+
+  }
+
+  private calcBlocks(size: number): number {
+    return Math.ceil(size / this.blockSize)
   }
 
   private eraseBlock(index: number) {
