@@ -93,6 +93,12 @@ class FileSystem implements IFileSystem {
 
   createFile(name: string): void {
     const size = getRandomIntRange(1, 4 * this.blockSize) // selected 4 just for testing purposes
+
+    if (this.bitMap.filter(bit => !bit).length < Math.ceil(size / this.blockSize)) {
+      console.log('ERROR: Unable to create the file as of luck of memory')
+      return;
+    }
+
     const blocks = Math.ceil(size / this.blockSize);
     let blocksIndexes = [];
     let busy = true;
@@ -101,10 +107,9 @@ class FileSystem implements IFileSystem {
       while (busy) {
         index = getRandomIntRange(0, this.blocksQuantity - 1);
         // if the block is already in use
-        // here bug
-        console.log({ index })
+        // console.log({ index })
         if (!this.memory[index].bits.filter(bit => bit !== 0).length) {
-          console.log({ index }, this.memory[index])
+          // console.log({ index }, this.memory[index])
           this.memory[index] = this.generateData();
           busy = false;
         }
@@ -114,7 +119,6 @@ class FileSystem implements IFileSystem {
       busy = true;
     }
     const file: IOrdinarFileDescriptor = { type: 'ordinary', name, size, linksNumber: 0, blockMap: { links: blocksIndexes } }
-    console.log({ file })
     this.files.push({ descriptor: file })
   }
 
@@ -221,11 +225,8 @@ class FileSystem implements IFileSystem {
   }
 
   truncate(name: string, newSize: number) {
-    let index = -1;
-    let busy = true;
     let initialSize = this.files.filter(file => file.descriptor.name === name)[0].descriptor.size
     let intialBlocks = initialSize % this.blockSize ? Math.ceil(initialSize / this.blockSize) : initialSize / this.blockSize;
-
 
     if (newSize === initialSize) return;
 
@@ -235,7 +236,6 @@ class FileSystem implements IFileSystem {
     }
 
     this.reduceFile(name, newSize)
-
   }
 
   private expandFile(name: string, intialBlocks: number, newSize: number): void {
@@ -381,6 +381,13 @@ const handleMultiCommands = (str: string): [string[], string] => {
         break;
       }
 
+      case 'filestat': {
+        const [id] = params;
+        const file = fs!.files[Number(id)]
+        if (file) console.log(file.descriptor);
+        break;
+      }
+
       case 'ls': {
         if (mounted) fs!.files.map((file, i) => console.log(`File ${file.descriptor.name} with its descriptor ${i}`));
         break;
@@ -470,9 +477,9 @@ const handleMultiCommands = (str: string): [string[], string] => {
         break;
 
       default:
-        console.log(fs!)
-        fs!.memory.map(el => console.log(el))
-        fs!.files.map(el => console.log(el.descriptor))
+        // console.log(fs!)
+        // fs!.memory.map(el => console.log(el))
+        // fs!.files.map(el => console.log(el.descriptor))
         console.log('Unknown command')
     }
 
