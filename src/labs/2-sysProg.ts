@@ -99,6 +99,11 @@ class FileSystem implements IFileSystem {
       return;
     }
 
+    if (this.files.length === this.maxDescriptorsNum) {
+      console.log('ERROR: Unable to create the file as of max descriptors restriction')
+      return;
+    }
+
     const blocks = Math.ceil(size / this.blockSize);
     let blocksIndexes = [];
     let busy = true;
@@ -139,7 +144,7 @@ class FileSystem implements IFileSystem {
 
   closeFile(fd: number) {
     this.files.map(file => {
-      if (file.descriptor.fd === fd) {
+      if (file.descriptor['fd'] === fd) {
         delete file.descriptor.fd;
       }
       return file
@@ -148,6 +153,12 @@ class FileSystem implements IFileSystem {
 
   readFile(fd: number, offset: number, size: number): void {
     const file = this.files.filter(file => file.descriptor.fd === fd)[0] as { descriptor: IOrdinarFileDescriptor };
+
+    if (!file) {
+      console.log('Wrong fd provided')
+      return;
+    }
+
     const { blockMap } = file.descriptor;
     // console.log({ links: blockMap.links })
     const block = blockMap.links[offset];
@@ -160,18 +171,28 @@ class FileSystem implements IFileSystem {
   }
 
   writeFile(fd: number, offset: number, size: number) {
+
+    if (size > this.blockSize) {
+      console.log('ERROR: Too much data');
+      return;
+    }
+
     const file = this.files.filter(file => file.descriptor.fd === fd)[0] as { descriptor: IOrdinarFileDescriptor };
+
+    if (!file) {
+      console.log('Wrong fd provided')
+      return;
+    }
+
     const { blockMap } = file.descriptor;
     const block = blockMap.links[offset];
     let newDataInBlock = (new Array(this.blockSize)).fill(0)
     if (block) {
       for (let i = 0; i < size; i++) newDataInBlock[i] = getRandomIntRange(1, 9)
-      console.log(this.memory[block].bits.join(' '))
+      console.log('Old: ', this.memory[block].bits.join(' '))
       this.memory[block].bits = newDataInBlock
-      console.log(this.memory[block].bits.join(' '))
-      if (size > this.blockSize) {
-        console.log('ERROR: Too much data')
-      }
+      console.log('New: ', this.memory[block].bits.join(' '))
+
     } else {
       console.log('ERROR: This file consists of fewer quantity of blocks')
     }
@@ -217,6 +238,14 @@ class FileSystem implements IFileSystem {
 
     if (file) {
       const ownBlockIndex = file.descriptor.blockMap.links.shift();
+
+      this.files = this.files.map(cur => {
+        let current = cur as { descriptor: IOrdinarFileDescriptor }
+        if (current.descriptor.blockMap.links.includes(file.descriptor.blockMap.links.pop()!)) {
+          current.descriptor.linksNumber--;
+        }
+        return current;
+      });
       // console.log({ ownBlockIndex })
       this.eraseBlock(ownBlockIndex!)
       this.files = this.files.filter(file => file.descriptor.name !== name)
@@ -240,6 +269,12 @@ class FileSystem implements IFileSystem {
 
   private expandFile(name: string, intialBlocks: number, newSize: number): void {
     const requiredBlocks = this.calcBlocks(newSize) - intialBlocks;
+
+    if (this.bitMap.filter(bit => !bit).length < requiredBlocks) {
+      console.log('ERROR: Unable to expand the file as of luck of memory')
+      return;
+    }
+
     const freeBlocks = this.selectFreeBlocks(requiredBlocks)
 
     this.files = this.files.map(file => {
@@ -252,17 +287,19 @@ class FileSystem implements IFileSystem {
           for (let i = howManyFree, j = this.blockSize - 1; i > 0; i--, j--) {
             this.memory[lastBlock].bits[j] = 0
           }
+          current.descriptor.size = newSize;
         }
       } else {
         if (current.descriptor.name === name) {
           current.descriptor.blockMap.links.push(...freeBlocks)
+          current.descriptor.size = newSize;
         }
       }
       return current
     })
 
     freeBlocks.map(index => {
-      this.memory[index].bits = (new Array(this.blockSize)).fill(0)
+      this.memory[index].bits = (new Array(this.blockSize)).fill(0) // uninitialized data equals 0
       this.bitMap[index] = 1;
     })
   }
@@ -339,11 +376,11 @@ const handleMultiCommands = (str: string): [string[], string] => {
 
 (async () => {
 
-  let mounted = false
+  let mounted = false;
 
   let fs: FileSystem | null;
 
-  let exit = false
+  let exit = false;
 
   while (!exit) {
     let params: string[] = [];
@@ -362,7 +399,7 @@ const handleMultiCommands = (str: string): [string[], string] => {
           fs = new FileSystem(64, 4, 15);
           mounted = true;
           console.log('File system mounted');
-          console.log({ fs, memory: fs.memory[0] })
+          console.log({ fs, typicalBlock: fs.memory[0] })
         }
         break;
       }
@@ -469,15 +506,23 @@ const handleMultiCommands = (str: string): [string[], string] => {
         break;
       }
 
+      case 'show': {
+        console.log(fs!)
+
+        console.log('---MEMORY---')
+        fs!.memory.map(el => console.log(el))
+
+        console.log('---FILES---')
+        fs!.files.map(el => console.log(el.descriptor))
+        break;
+      }
+
       case 'exit':
         exit = true
         console.log('Exited the fs');
         break;
 
       default:
-        // console.log(fs!)
-        // fs!.memory.map(el => console.log(el))
-        // fs!.files.map(el => console.log(el.descriptor))
         console.log('Unknown command')
     }
 
