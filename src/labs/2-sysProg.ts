@@ -417,6 +417,7 @@ const handleMultiCommands = (str: string): [string[], string] => {
       }
 
       case 'filestat': {
+        if (!mounted) break;
         const [id] = params;
         const file = fs!.files[Number(id)]
         if (file) console.log(file.descriptor);
@@ -429,6 +430,7 @@ const handleMultiCommands = (str: string): [string[], string] => {
       }
 
       case 'create': {
+        if (!mounted) break;
         const name = params[0]
         if (!name) {
           console.log('ERROR: No name provided')
@@ -446,6 +448,7 @@ const handleMultiCommands = (str: string): [string[], string] => {
       }
 
       case 'open': {
+        if (!mounted) break;
         const name = params[0]
         if (!name) {
           console.log('ERROR: No name provided')
@@ -462,6 +465,7 @@ const handleMultiCommands = (str: string): [string[], string] => {
       }
 
       case 'close': {
+        if (!mounted) break;
         const fd = Number(params[0]);
         if (!fd) {
           console.log('ERROR: No fd provided')
@@ -477,36 +481,43 @@ const handleMultiCommands = (str: string): [string[], string] => {
       }
 
       case 'read': {
+        if (!mounted) break;
         const [fd, offset, size] = params;
         fs!.readFile(Number(fd), Number(offset), Number(size))
         break;
       }
 
       case 'write': {
+        if (!mounted) break;
         const [fd, offset, size] = params;
         fs!.writeFile(Number(fd), Number(offset), Number(size));
         break;
       }
 
       case 'link': {
+        if (!mounted) break;
         const [name1, name2] = params;
         fs!.link(name1, name2);
         break;
       }
 
       case 'unlink': {
+        if (!mounted) break;
         const [name] = params;
         fs!.unlink(name);
         break;
       }
 
       case 'truncate': {
+        if (!mounted) break;
         const [name, newSize] = params;
         fs!.truncate(name, Number(newSize));
         break;
       }
 
       case 'show': {
+        if (!mounted) break;
+
         console.log(fs!)
 
         console.log('---MEMORY---')
