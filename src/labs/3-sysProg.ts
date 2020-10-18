@@ -221,26 +221,19 @@ class FileSystem implements IFileSystem {
 
     this.files.map(el => console.log(el))
 
-    if (file.descriptor.names.length > 1) {
+    if (file.descriptor.linksNumber > 1) {
       file.descriptor.names = file.descriptor.names.filter(cur => cur !== name)
-      this.files.map(el => console.log(el))
-
+      file.descriptor.linksNumber--;
+      this.files.map(el => console.log(el));
       return;
-    }
-
-    if (file) {
-      const ownBlockIndex = file.descriptor.blockMap.links.shift();
-
-      this.files = this.files.map(cur => {
-        let current = cur as { descriptor: IOrdinarFileDescriptor }
-        if (current.descriptor.blockMap.links.includes(file.descriptor.blockMap.links.pop()!)) {
-          current.descriptor.linksNumber--;
-        }
-        return current;
-      });
-      // console.log({ ownBlockIndex })
-      this.eraseBlock(ownBlockIndex!)
-      this.files = this.files.filter(file => file.descriptor.name !== name)
+    } else {
+      console.log(file.descriptor.blockMap.links);
+      this.files = this.files.filter(fileDesc => !fileDesc.descriptor.names.includes(name));
+      console.log(this.memory)
+      file.descriptor.blockMap.links.map(block => this.eraseBlock(block))
+      console.log('-------')
+      console.log(this.memory)
+      this.files.map(el => console.log(el))
     }
 
   }
