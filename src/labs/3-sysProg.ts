@@ -95,6 +95,11 @@ class FileSystem implements IFileSystem {
   createFile(name: string): void {
     const size = getRandomIntRange(1, 4 * this.blockSize) // selected 4 just for testing purposes
 
+    if (this.isNameAlreadyTaken(name)) {
+      this.handleAlreadyTakenName();
+      return;
+    }
+
     if (this.bitMap.filter(bit => !bit).length < Math.ceil(size / this.blockSize)) {
       console.log('ERROR: Unable to create the file as of luck of memory')
       return;
@@ -204,6 +209,11 @@ class FileSystem implements IFileSystem {
   }
 
   link(name1: string, name2: string) {
+
+    if (this.isNameAlreadyTaken(name1)) {
+      this.handleAlreadyTakenName();
+      return;
+    }
 
     this.files = this.files.map(file => {
       if (file.descriptor.names.includes(name2)) {
@@ -327,6 +337,16 @@ class FileSystem implements IFileSystem {
     this.bitMap[index] = 0;
   }
 
+  private isNameAlreadyTaken(name: string): boolean {
+    let allNames: string[] = [];
+    this.files.map(file => allNames.push(...file.descriptor.names))
+    return allNames.includes(name)
+  }
+
+  private handleAlreadyTakenName() {
+    console.log('The name is already taken')
+  }
+
   private selectFreeBlocks(n: number): number[] {
 
     let indexes: number[] = [];
@@ -424,7 +444,6 @@ const handleMultiCommands = (str: string): [string[], string] => {
 
         if (fs!) {
           fs!.createFile(name)
-          console.log('CREATING FILE', name)
 
         } else {
           console.log('ERROR: File system isn\'t mounted')
