@@ -239,7 +239,7 @@ class FileSystem implements IFileSystem {
   }
 
   truncate(name: string, newSize: number) {
-    let initialSize = this.files.filter(file => file.descriptor.name === name)[0].descriptor.size
+    let initialSize = this.files.filter(file => file.descriptor.names.includes(name))[0].descriptor.size
     let intialBlocks = initialSize % this.blockSize ? Math.ceil(initialSize / this.blockSize) : initialSize / this.blockSize;
 
     if (newSize === initialSize) return;
@@ -275,7 +275,7 @@ class FileSystem implements IFileSystem {
           current.descriptor.size = newSize;
         }
       } else {
-        if (current.descriptor.name === name) {
+        if (current.descriptor.names.includes(name)) {
           current.descriptor.blockMap.links.push(...freeBlocks)
           current.descriptor.size = newSize;
         }
@@ -294,7 +294,7 @@ class FileSystem implements IFileSystem {
 
     this.files = this.files.map(file => {
       const current = file as { descriptor: IOrdinarFileDescriptor };
-      if (current.descriptor.name === name) {
+      if (current.descriptor.names.includes(name)) {
 
         while (requiredBlocks !== current.descriptor.blockMap.links.length) {
           const index = current.descriptor.blockMap.links.pop()
@@ -410,7 +410,7 @@ const handleMultiCommands = (str: string): [string[], string] => {
       }
 
       case 'ls': {
-        if (mounted) fs!.files.map((file, i) => console.log(`File ${file.descriptor.name} with its descriptor ${i}`));
+        if (mounted) fs!.files.map((file, i) => console.log(`FileNames ${file.descriptor.names} with their descriptor ${i}`));
         break;
       }
 
