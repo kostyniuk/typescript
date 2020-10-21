@@ -22,7 +22,7 @@ const readNelements = (arr: number[], n: number): number[] => {
 
 type FileType = 'ordinary' | 'directory' | 'symlink'
 
-type IFileDescriptor = IOrdinarFileDescriptor | IDirectoryFileDescriptor;
+type IFileDescriptor = IOrdinarFileDescriptor | IDirectoryFileDescriptor | ISymLinkDescriptor;
 
 interface IBlock {
   bits: number[]
@@ -34,22 +34,28 @@ interface IBlockMap {
 
 interface IFileLink {
   name: string
-  descriptor: IFileDescriptor
+  descriptor: number
 }
 
 interface IFileDescriptorBasic {
-  names: string[]
   type: FileType
-  linksNumber: number
   size: number
-  fd?: number
-}
-
-interface IOrdinarFileDescriptor extends IFileDescriptorBasic {
   blockMap: IBlockMap
 }
 
+interface ISymLinkDescriptor extends IFileDescriptorBasic {
+  name: string
+  value: string
+}
+
+interface IOrdinarFileDescriptor extends IFileDescriptorBasic {
+  names: string[]
+  linksNumber: number
+  fd?: number
+}
+
 interface IDirectoryFileDescriptor extends IFileDescriptorBasic {
+  name: string
   data: IFileLink[]
 }
 
@@ -65,6 +71,7 @@ interface IFileSystem {
   memory: IBlock[]
   bitMap: Number[]
   files: IFile[]
+  workingDirectory: IFileLink;
 }
 
 class FileSystem implements IFileSystem {
@@ -76,6 +83,7 @@ class FileSystem implements IFileSystem {
   memory: IBlock[] = []
   bitMap: Number[]
   files: IFile[] = []
+  workingDirectory: IFileLink = { name: '', descriptor: -1 };
 
   constructor(size: number, blockSize: number, maxDescriptorsNum: number) {
     this.size = size;
@@ -84,10 +92,19 @@ class FileSystem implements IFileSystem {
     this.maxDescriptorsNum = maxDescriptorsNum;
     this.formMemory()
     this.bitMap = new Array(size / blockSize).fill(0)
+    this.createRootDirectory()
+    this.workingDirectory = { descriptor: 0, name: 'root' }
+  }
+
+  private createRootDirectory(): void {
+    const dir: IDirectoryFileDescriptor = { name: 'root', size: 1, type: 'directory', blockMap: { links: [0] }, data: [] }
+    this.bitMap[0] = 1; // the first block is ised for the root directory
+    this.files.push({ descriptor: dir })
   }
 
   private formMemory(): void {
     for (let i = 0; i < this.blocksQuantity; i++) {
+      if (i === 0) this.memory.push({ bits: new Array(this.blockSize).fill(1) }) // root directory
       this.memory.push({ bits: new Array(this.blockSize).fill(0) })
     }
   }
@@ -136,32 +153,49 @@ class FileSystem implements IFileSystem {
 
   openFile(name: string): number | void {
     if (this.files.length) {
-      const selectedFile = this.files.filter(file => file.descriptor.names.includes(name))
+      const selectedFile = this.files.filter(file => {
+        if ('names' in file.descriptor) {
+          return file.descriptor.names.includes(name)
+        }
+        return false
+      })
       console.log({ selectedFile })
       if (selectedFile.length) {
         const fd = getRandomIntRange(0, 1000)
-        selectedFile[0].descriptor.fd = fd
-        this.files.map(file => {
-          if (file.descriptor.names.includes(name)) return selectedFile;
-          return file
-        })
-        this.files.map(el => console.log(el))
-        return fd
+
+        if ('names' in selectedFile[0].descriptor) {
+          selectedFile[0].descriptor.fd = fd
+          this.files.map(file => {
+            if ('names' in file.descriptor) {
+              if (file.descriptor.names.includes(name)) return selectedFile;
+            }
+            return file
+          })
+          this.files.map(el => console.log(el))
+          return fd
+        }
       }
     }
   }
 
   closeFile(fd: number) {
     this.files.map(file => {
-      if (file.descriptor['fd'] === fd) {
-        delete file.descriptor.fd;
+      if ('names' in file.descriptor) {
+        if (file.descriptor['fd'] === fd) {
+          delete file.descriptor.fd;
+        }
       }
       return file
     })
   }
 
   readFile(fd: number, offset: number, size: number): void {
-    const file = this.files.filter(file => file.descriptor.fd === fd)[0] as { descriptor: IOrdinarFileDescriptor };
+    const file = this.files.filter(file => {
+      if ('names' in file.descriptor) {
+        return file.descriptor.fd === fd;
+      }
+      return false;
+    })[0] as { descriptor: IOrdinarFileDescriptor }
 
     if (!file) {
       console.log('Wrong fd provided')
@@ -186,7 +220,12 @@ class FileSystem implements IFileSystem {
       return;
     }
 
-    const file = this.files.filter(file => file.descriptor.fd === fd)[0] as { descriptor: IOrdinarFileDescriptor };
+    const file = this.files.filter(file => {
+      if ('names' in file.descriptor) {
+        return file.descriptor.fd === fd;
+      }
+      return false;
+    })[0] as { descriptor: IOrdinarFileDescriptor }
 
     if (!file) {
       console.log('Wrong fd provided')
@@ -216,9 +255,11 @@ class FileSystem implements IFileSystem {
     }
 
     this.files = this.files.map(file => {
-      if (file.descriptor.names.includes(name2)) {
-        file.descriptor.names.push(name1)
-        file.descriptor.linksNumber++;
+      if ('names' in file.descriptor) {
+        if (file.descriptor.names.includes(name2)) {
+          file.descriptor.names.push(name1)
+          file.descriptor.linksNumber++;
+        }
       }
       return file
     })
@@ -227,7 +268,12 @@ class FileSystem implements IFileSystem {
   }
 
   unlink(name: string) {
-    const file = this.files.filter(file => file.descriptor.names.includes(name))[0] as { descriptor: IOrdinarFileDescriptor };
+    const file = this.files.filter(file => {
+      if ('names' in file.descriptor) {
+        return file.descriptor.names.includes(name);
+      }
+      return false
+    })[0] as { descriptor: IOrdinarFileDescriptor }
 
     this.files.map(el => console.log(el))
 
@@ -238,7 +284,13 @@ class FileSystem implements IFileSystem {
       return;
     } else {
       console.log(file.descriptor.blockMap.links);
-      this.files = this.files.filter(fileDesc => !fileDesc.descriptor.names.includes(name));
+      this.files = this.files.filter(fileDesc => {
+        if ('names' in fileDesc.descriptor) {
+          return !fileDesc.descriptor.names.includes(name);
+        }
+        return false;
+      })
+
       console.log(this.memory)
       file.descriptor.blockMap.links.map(block => this.eraseBlock(block))
       console.log('-------')
@@ -249,7 +301,15 @@ class FileSystem implements IFileSystem {
   }
 
   truncate(name: string, newSize: number) {
-    let initialSize = this.files.filter(file => file.descriptor.names.includes(name))[0].descriptor.size
+
+
+    let initialSize = this.files.filter(file => {
+      if ('names' in file.descriptor) {
+        return file.descriptor.names.includes(name)
+      }
+      return false
+    })[0].descriptor.size
+
     let intialBlocks = initialSize % this.blockSize ? Math.ceil(initialSize / this.blockSize) : initialSize / this.blockSize;
 
     if (newSize === initialSize) return;
@@ -339,7 +399,12 @@ class FileSystem implements IFileSystem {
 
   private isNameAlreadyTaken(name: string): boolean {
     let allNames: string[] = [];
-    this.files.map(file => allNames.push(...file.descriptor.names))
+    this.files.map(file => {
+      if ('names' in file.descriptor) {
+        return allNames.push(...file.descriptor.names)
+      }
+      return file
+    })
     return allNames.includes(name)
   }
 
@@ -430,7 +495,11 @@ const handleMultiCommands = (str: string): [string[], string] => {
       }
 
       case 'ls': {
-        if (mounted) fs!.files.map((file, i) => console.log(`FileNames ${file.descriptor.names} with their descriptor ${i}`));
+        if (mounted) fs!.files.map((file, i) => {
+          if ('names' in file.descriptor) {
+            console.log(`FileNames ${file.descriptor.names} with their descriptor ${i}`);
+          }
+        })
         break;
       }
 
