@@ -38,6 +38,7 @@ interface IFileLink {
 }
 
 interface IFileDescriptorBasic {
+  id: number
   type: FileType
   size: number
   blockMap: IBlockMap
@@ -57,6 +58,8 @@ interface IOrdinarFileDescriptor extends IFileDescriptorBasic {
 interface IDirectoryFileDescriptor extends IFileDescriptorBasic {
   name: string
   data: IFileLink[]
+  current: IFileLink
+  parent: IFileLink
 }
 
 interface IFile {
@@ -84,6 +87,7 @@ class FileSystem implements IFileSystem {
   bitMap: Number[]
   files: IFile[] = []
   workingDirectory: IFileLink = { name: '', descriptor: -1 };
+  id = 0;
 
   constructor(size: number, blockSize: number, maxDescriptorsNum: number) {
     this.size = size;
@@ -97,8 +101,9 @@ class FileSystem implements IFileSystem {
   }
 
   private createRootDirectory(): void {
-    const dir: IDirectoryFileDescriptor = { name: 'root', size: 1, type: 'directory', blockMap: { links: [0] }, data: [] }
+    const dir: IDirectoryFileDescriptor = { id: this.id, name: 'root', size: 1, type: 'directory', blockMap: { links: [0] }, data: [], current: { descriptor: 0, name: 'root' }, parent: { descriptor: 0, name: 'root' } }
     this.bitMap[0] = 1; // the first block is ised for the root directory
+    this.id++;
     this.files.push({ descriptor: dir })
   }
 
@@ -146,8 +151,20 @@ class FileSystem implements IFileSystem {
       blocksIndexes.push(index!);
       busy = true;
     }
-    const file: IOrdinarFileDescriptor = { type: 'ordinary', names: [name], size, linksNumber: 1, blockMap: { links: blocksIndexes } }
-    console.log({ file })
+    const file: IOrdinarFileDescriptor = { id: this.id, type: 'ordinary', names: [name], size, linksNumber: 1, blockMap: { links: blocksIndexes } }
+    this.id++;
+
+    // Adding descriptor to the current directory
+    this.files = this.files.map(_ => {
+      if (_.descriptor.id === this.workingDirectory.descriptor) {
+        if ('data' in _.descriptor) {
+          _.descriptor.data.push({ descriptor: file.id, name: name })
+        }
+        return _
+      }
+      return _
+    })
+
     this.files.push({ descriptor: file })
   }
 
@@ -302,7 +319,6 @@ class FileSystem implements IFileSystem {
 
   truncate(name: string, newSize: number) {
 
-
     let initialSize = this.files.filter(file => {
       if ('names' in file.descriptor) {
         return file.descriptor.names.includes(name)
@@ -320,6 +336,76 @@ class FileSystem implements IFileSystem {
     }
 
     this.reduceFile(name, newSize)
+  }
+
+  mkdir(name: string) {
+
+    const [blockNum] = this.selectFreeBlocks(1)
+
+    const dir: IDirectoryFileDescriptor = { id: this.id, name: name, size: 1, type: 'directory', blockMap: { links: [blockNum] }, data: [], current: { descriptor: this.id, name }, parent: { descriptor: this.workingDirectory.descriptor, name: this.workingDirectory.name } }
+
+    this.bitMap[blockNum] = 1; // the first block is used for the root directory
+    this.id++;
+
+    this.files = this.files.map(_ => {
+      if (_.descriptor.id === this.workingDirectory.descriptor) {
+        if ('data' in _.descriptor) {
+          _.descriptor.data.push({ descriptor: dir.id, name: name })
+        }
+        return _
+      }
+      return _
+    })
+
+    this.files.push({ descriptor: dir })
+  }
+
+  cd(path: string) {
+    this.findDestination(path)
+  }
+
+  private parsePath(path: string) {
+
+  }
+
+  private findDestination(path: string) {
+
+    const divided = path.split('/');
+    console.log({ path, divided })
+
+    divided.map(symb => {
+      if (symb === '..') {
+        this.files.map(file => {
+          if (file.descriptor.id === this.workingDirectory.descriptor && 'data' in file.descriptor) {
+            this.workingDirectory.descriptor = file.descriptor.parent.descriptor
+            this.workingDirectory.name = file.descriptor.parent.name
+            console.log(`Moved to ${this.workingDirectory.name}`)
+          }
+        })
+      } else if (symb === '.') {
+        console.log(`Moved to ${this.workingDirectory.name}`)
+        // no need for any change
+      } else {
+        this.files.map(file => {
+          if (file.descriptor.id === this.workingDirectory.descriptor && 'data' in file.descriptor) {
+            file.descriptor.data.map(tuple => {
+              if (tuple.name === symb) {
+                const desc = this.files.filter(cur => (cur.descriptor.id === tuple.descriptor && 'data' in cur.descriptor))[0] as { descriptor: IDirectoryFileDescriptor }
+                if (desc) {
+                  this.workingDirectory.descriptor = desc.descriptor.id;
+                  this.workingDirectory.name = desc.descriptor.name;
+                  console.log(`Moved to ${this.workingDirectory.name}`)
+                } else {
+                  console.log('ERROR: cd doesn\'t work with files, only with directories')
+                }
+              }
+            })
+          }
+        })
+      }
+    })
+
+    // this.workingDirectory.descriptor
   }
 
   private expandFile(name: string, intialBlocks: number, newSize: number): void {
@@ -379,13 +465,10 @@ class FileSystem implements IFileSystem {
             this.memory[lastBlock].bits[j] = 0
           }
         }
-
         current.descriptor.size = newSize;
-
       }
       return current;
     })
-
   }
 
   private calcBlocks(size: number): number {
@@ -466,7 +549,7 @@ const handleMultiCommands = (str: string): [string[], string] => {
         if (mounted) {
           console.log('File system is already mounted');
         } else {
-          fs = new FileSystem(64, 4, 15);
+          fs = new FileSystem(128, 4, 15);
           mounted = true;
           console.log('File system mounted');
           console.log({ fs, typicalBlock: fs.memory[0] })
@@ -498,6 +581,9 @@ const handleMultiCommands = (str: string): [string[], string] => {
         if (mounted) fs!.files.map((file, i) => {
           if ('names' in file.descriptor) {
             console.log(`FileNames ${file.descriptor.names} with their descriptor ${i}`);
+          }
+          if ('data' in file.descriptor) {
+            console.log(`Directory: ${file.descriptor.name} with its descriptor: ${i}`)
           }
         })
         break;
@@ -585,6 +671,26 @@ const handleMultiCommands = (str: string): [string[], string] => {
         if (!mounted) break;
         const [name, newSize] = params;
         fs!.truncate(name, Number(newSize));
+        break;
+      }
+
+      case 'mkdir': {
+        if (!mounted) break;
+        const [name] = params;
+        fs!.mkdir(name);
+        break;
+      }
+
+      case 'pwd': {
+        if (!mounted) break;
+        console.log(fs!.workingDirectory.name);
+        break;
+      }
+
+      case 'cd': {
+        if (!mounted) break;
+        const [name] = params;
+        fs!.cd(name);
         break;
       }
 
