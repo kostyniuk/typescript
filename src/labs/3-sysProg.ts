@@ -104,6 +104,7 @@ class FileSystem implements IFileSystem {
 
   private createRootDirectory(): void {
     const dir: IDirectoryFileDescriptor = { id: this.id, name: 'root', size: 1, type: 'directory', blockMap: { links: [0] }, data: [], current: { descriptor: 0, name: 'root' }, parent: { descriptor: 0, name: 'root' } }
+    this.memory[0] = this.generateData();
     this.bitMap[0] = 1; // the first block is ised for the root directory
     this.id++;
     this.files.push({ descriptor: dir })
@@ -111,7 +112,7 @@ class FileSystem implements IFileSystem {
 
   private formMemory(): void {
     for (let i = 0; i < this.blocksQuantity; i++) {
-      if (i === 0) this.memory.push({ bits: new Array(this.blockSize).fill(1) }) // root directory
+      // root directory
       this.memory.push({ bits: new Array(this.blockSize).fill(0) })
     }
   }
@@ -398,23 +399,50 @@ class FileSystem implements IFileSystem {
 
   truncate(name: string, newSize: number) {
 
-    let initialSize = this.files.filter(file => {
-      if ('names' in file.descriptor) {
-        return file.descriptor.names.includes(name)
+    const oldWorkDir = deepCopy(this.workingDirectory) as IFileLink; // object in js/ts has the same position in memory, so to delete that connection we need need to use deepCopy 
+
+    const fileName = this.getFile(name)
+
+    if (!fileName) {
+      console.log('Wrong path provided');
+      return;
+    }
+
+    const names = this.getNamesInFolder(this.workingDirectory)
+
+    const file = this.files.filter(file => {
+      if ('names' in file.descriptor && names.includes(fileName)) {
+        return file.descriptor.names.includes(fileName);
+      }
+      return false
+    })[0] as { descriptor: IOrdinarFileDescriptor }
+
+    console.log({ file })
+
+    if (!file) {
+      console.log('Wrong path provided');
+      return;
+    }
+
+    let initialSize = this.files.filter(_ => {
+      if ('names' in _.descriptor) {
+        return _.descriptor.names.includes(fileName)
       }
       return false
     })[0].descriptor.size
 
     let intialBlocks = initialSize % this.blockSize ? Math.ceil(initialSize / this.blockSize) : initialSize / this.blockSize;
 
+    this.workingDirectory = oldWorkDir;
+
     if (newSize === initialSize) return;
 
     if (newSize > initialSize) {
-      this.expandFile(name, intialBlocks, newSize);
+      this.expandFile(fileName, intialBlocks, newSize);
       return;
     }
 
-    this.reduceFile(name, newSize)
+    this.reduceFile(fileName, newSize)
   }
 
   mkdir(name: string) {
@@ -422,6 +450,8 @@ class FileSystem implements IFileSystem {
     const [blockNum] = this.selectFreeBlocks(1)
 
     const dir: IDirectoryFileDescriptor = { id: this.id, name: name, size: 1, type: 'directory', blockMap: { links: [blockNum] }, data: [], current: { descriptor: this.id, name }, parent: { descriptor: this.workingDirectory.descriptor, name: this.workingDirectory.name } }
+
+    this.memory[blockNum] = this.generateData();
 
     this.bitMap[blockNum] = 1; // the first block is used for the root directory
     this.id++;
@@ -542,7 +572,7 @@ class FileSystem implements IFileSystem {
     const freeBlocks = this.selectFreeBlocks(requiredBlocks)
 
     this.files = this.files.map(file => {
-      const current = file as { descriptor: IOrdinarFileDescriptor };
+      const current = file;
 
       if (!freeBlocks.length) {
         const lastBlock = current.descriptor.blockMap.links[intialBlocks - 1]
@@ -554,7 +584,7 @@ class FileSystem implements IFileSystem {
           current.descriptor.size = newSize;
         }
       } else {
-        if (current.descriptor.names.includes(name)) {
+        if ('names' in current.descriptor && current.descriptor.names.includes(name)) {
           current.descriptor.blockMap.links.push(...freeBlocks)
           current.descriptor.size = newSize;
         }
@@ -572,8 +602,8 @@ class FileSystem implements IFileSystem {
     const requiredBlocks = this.calcBlocks(newSize)
 
     this.files = this.files.map(file => {
-      const current = file as { descriptor: IOrdinarFileDescriptor };
-      if (current.descriptor.names.includes(name)) {
+      const current = file 
+      if ('names' in current.descriptor && current.descriptor.names.includes(name)) {
 
         while (requiredBlocks !== current.descriptor.blockMap.links.length) {
           const index = current.descriptor.blockMap.links.pop()
