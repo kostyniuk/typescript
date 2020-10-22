@@ -12,6 +12,8 @@ readline.question[util.promisify.custom] = (question: string) => {
   });
 };
 
+const deepCopy = (_: object): object => JSON.parse(JSON.stringify(_))
+
 const getRandomIntRange = (min: number, max: number): number => {
   return Math.round(Math.random() * (max - min) + min);
 }
@@ -169,14 +171,26 @@ class FileSystem implements IFileSystem {
   }
 
   openFile(name: string): number | void {
+
+    const oldWorkDir = deepCopy(this.workingDirectory) as IFileLink; // object in js/ts has the same position in memory, so to delete that connection we need need to use deepCopy 
+
+    const fileName = this.getFile(name)
+
+    if (!fileName) {
+      console.log('Wrong path provided');
+      return;
+    }
+
+    const names = this.getNamesInFolder(this.workingDirectory)
+
     if (this.files.length) {
       const selectedFile = this.files.filter(file => {
-        if ('names' in file.descriptor) {
-          return file.descriptor.names.includes(name)
+        if ('names' in file.descriptor && names.includes(fileName)) {
+          return file.descriptor.names.includes(fileName)
         }
         return false
       })
-      console.log({ selectedFile })
+
       if (selectedFile.length) {
         const fd = getRandomIntRange(0, 1000)
 
@@ -188,6 +202,7 @@ class FileSystem implements IFileSystem {
             }
             return file
           })
+          this.workingDirectory = oldWorkDir;
           this.files.map(el => console.log(el))
           return fd
         }
@@ -266,22 +281,59 @@ class FileSystem implements IFileSystem {
 
   link(name1: string, name2: string) {
 
+    const oldWorkDir = deepCopy(this.workingDirectory) as IFileLink; // object in js/ts has the same position in memory, so to delete that connection we need need to use deepCopy 
+
+    const fileName = this.getFile(name2)
+
+    if (!fileName) {
+      console.log('Wrong path provided');
+      return;
+    }
+
     if (this.isNameAlreadyTaken(name1)) {
       this.handleAlreadyTakenName();
       return;
     }
 
+    let descOriginFile = NaN;
+    let names: string[] = this.getNamesInFolder(this.workingDirectory);
+
     this.files = this.files.map(file => {
-      if ('names' in file.descriptor) {
-        if (file.descriptor.names.includes(name2)) {
+      if ('names' in file.descriptor && names.includes(fileName)) {
+        if (file.descriptor.names.includes(fileName)) {
+          descOriginFile = file.descriptor.id;
+          console.log({ descOriginFile })
           file.descriptor.names.push(name1)
           file.descriptor.linksNumber++;
         }
       }
       return file
     })
-    this.files.map(el => console.log(el))
 
+    this.addToDirectory({ descriptor: descOriginFile, name: name1 })
+
+    this.workingDirectory = oldWorkDir
+  }
+
+  private getNamesInFolder(current: IFileLink): string[] {
+    let names: string[] = []
+    this.files.map(file => {
+      if ('data' in file.descriptor && file.descriptor.id === current.descriptor) {
+        names = file.descriptor.data.map(tup => tup.name) // only files in this folder
+        console.log({ names })
+      }
+    });
+    return names;
+  }
+
+  private addToDirectory(fileToAdd: IFileLink) {
+    this.files.map(file => {
+      if ('data' in file.descriptor && fileToAdd.descriptor) {
+        if (file.descriptor.id === this.workingDirectory.descriptor) {
+          file.descriptor.data.push(fileToAdd)
+        }
+      }
+    })
   }
 
   unlink(name: string) {
@@ -361,51 +413,95 @@ class FileSystem implements IFileSystem {
   }
 
   cd(path: string) {
-    this.findDestination(path)
+    this.setWorkingDir(path)
+    console.log(`Moved to ${this.workingDirectory.name}`)
   }
 
   private parsePath(path: string) {
 
   }
 
-  private findDestination(path: string) {
+  private setWorkingDir(path: string) {
 
     const divided = path.split('/');
     console.log({ path, divided })
 
-    divided.map(symb => {
+    if (!divided[0].length) return;
+
+    divided.map((symb, i) => {
+
+      // / handling
+      if (i === 0 && symb === '') {
+        this.files.map(file => {
+          if (file.descriptor.id === 0 && 'data' in file.descriptor) {
+            this.workingDirectory.descriptor = file.descriptor.parent.descriptor
+            this.workingDirectory.name = file.descriptor.parent.name
+          }
+        })
+      }
+
       if (symb === '..') {
         this.files.map(file => {
           if (file.descriptor.id === this.workingDirectory.descriptor && 'data' in file.descriptor) {
             this.workingDirectory.descriptor = file.descriptor.parent.descriptor
             this.workingDirectory.name = file.descriptor.parent.name
-            console.log(`Moved to ${this.workingDirectory.name}`)
           }
         })
       } else if (symb === '.') {
-        console.log(`Moved to ${this.workingDirectory.name}`)
         // no need for any change
       } else {
+        let found = false
         this.files.map(file => {
           if (file.descriptor.id === this.workingDirectory.descriptor && 'data' in file.descriptor) {
             file.descriptor.data.map(tuple => {
               if (tuple.name === symb) {
                 const desc = this.files.filter(cur => (cur.descriptor.id === tuple.descriptor && 'data' in cur.descriptor))[0] as { descriptor: IDirectoryFileDescriptor }
                 if (desc) {
+                  found = true;
                   this.workingDirectory.descriptor = desc.descriptor.id;
                   this.workingDirectory.name = desc.descriptor.name;
-                  console.log(`Moved to ${this.workingDirectory.name}`)
                 } else {
                   console.log('ERROR: cd doesn\'t work with files, only with directories')
                 }
               }
             })
           }
+          console.log({ found, symb })
         })
+        if (!found) console.log(`ERROR: No such directory: ${symb}`)
       }
     })
 
     // this.workingDirectory.descriptor
+  }
+
+  private getFile(path: string) {
+    let splitted = path.split('/')
+    let file = splitted.pop()
+    this.setWorkingDir(splitted.join('/'))
+    if (file && this.isFileExistsInCurDir(file)) {
+      return file;
+    }
+
+    return undefined;
+
+  }
+
+  private isFileExistsInCurDir(name: string): boolean {
+    const curDesc = this.workingDirectory.descriptor;
+
+    const curFolder = this.files.filter(_ => (curDesc === _.descriptor.id && _.descriptor.type === 'directory'))[0] as { descriptor: IDirectoryFileDescriptor }
+
+    if (curFolder) {
+      if (curFolder.descriptor.data.filter(tuple => tuple.name === name)[0]) {
+        // console.log({ curFolder, name })
+        return true
+      } else {
+        // console.log({ curFolder })
+        return false
+      }
+    }
+    return false;
   }
 
   private expandFile(name: string, intialBlocks: number, newSize: number): void {
@@ -510,11 +606,6 @@ class FileSystem implements IFileSystem {
     return indexes
   }
 
-  // private attachBlock(index: number) {
-  //   this.memory[index] = this.generateData();
-  //   this.bitMap[index] = 1
-  // }
-
   private generateData(): IBlock {
     let block: IBlock = { bits: (new Array(this.blockSize)).fill(0) };
     block.bits = block.bits.map(_ => getRandomIntRange(0, 9))
@@ -578,14 +669,22 @@ const handleMultiCommands = (str: string): [string[], string] => {
       }
 
       case 'ls': {
-        if (mounted) fs!.files.map((file, i) => {
-          if ('names' in file.descriptor) {
-            console.log(`FileNames ${file.descriptor.names} with their descriptor ${i}`);
-          }
-          if ('data' in file.descriptor) {
-            console.log(`Directory: ${file.descriptor.name} with its descriptor: ${i}`)
-          }
-        })
+
+        if (mounted) {
+          const descNum = fs!.workingDirectory.descriptor
+          fs!.files.map((file, i) => {
+
+            if (file.descriptor.id === descNum) {
+              // if ('names' in file.descriptor) {
+              // console.log(`FileNames ${file.descriptor.names} with their descriptor ${i}`);
+              // }
+              if ('data' in file.descriptor) {
+                console.log(`Directory: ${file.descriptor.name} with its descriptor: ${i}`)
+                console.log(file.descriptor.data)
+              }
+            }
+          })
+        }
         break;
       }
 
