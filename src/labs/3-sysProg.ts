@@ -337,27 +337,53 @@ class FileSystem implements IFileSystem {
   }
 
   unlink(name: string) {
+
+    const oldWorkDir = deepCopy(this.workingDirectory) as IFileLink; // object in js/ts has the same position in memory, so to delete that connection we need need to use deepCopy 
+
+    const fileName = this.getFile(name)
+
+    if (!fileName) {
+      console.log('Wrong path provided');
+      return;
+    }
+
+    const names = this.getNamesInFolder(this.workingDirectory)
+
     const file = this.files.filter(file => {
-      if ('names' in file.descriptor) {
-        return file.descriptor.names.includes(name);
+      if ('names' in file.descriptor && names.includes(fileName)) {
+        return file.descriptor.names.includes(fileName);
       }
       return false
     })[0] as { descriptor: IOrdinarFileDescriptor }
 
-    this.files.map(el => console.log(el))
+    console.log({ file })
+
+    this.files = this.files.map(_ => {
+      if (_.descriptor.id === this.workingDirectory.descriptor && 'data' in _.descriptor) {
+        console.log(_.descriptor)
+        _.descriptor.data = _.descriptor.data.filter(el => (el.name !== fileName))
+      }
+      return _
+    })
 
     if (file.descriptor.linksNumber > 1) {
-      file.descriptor.names = file.descriptor.names.filter(cur => cur !== name)
+      file.descriptor.names = file.descriptor.names.filter(cur => cur !== fileName)
       file.descriptor.linksNumber--;
-      this.files.map(el => console.log(el));
+
+      this.workingDirectory = oldWorkDir;
+
       return;
     } else {
-      console.log(file.descriptor.blockMap.links);
-      this.files = this.files.filter(fileDesc => {
-        if ('names' in fileDesc.descriptor) {
-          return !fileDesc.descriptor.names.includes(name);
+      // console.log(file.descriptor.blockMap.links);
+      this.files = this.files.filter(_ => {
+        if ('names' in _.descriptor) {
+          return !_.descriptor.names.includes(fileName);
         }
-        return false;
+        if (_.descriptor.id === this.workingDirectory.descriptor && 'data' in _.descriptor) {
+          console.log(_.descriptor)
+          _.descriptor.data = _.descriptor.data.filter(el => (el.name !== fileName))
+        }
+        return _
       })
 
       console.log(this.memory)
@@ -365,8 +391,9 @@ class FileSystem implements IFileSystem {
       console.log('-------')
       console.log(this.memory)
       this.files.map(el => console.log(el))
-    }
 
+      this.workingDirectory = oldWorkDir;
+    }
   }
 
   truncate(name: string, newSize: number) {
