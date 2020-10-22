@@ -501,18 +501,16 @@ class FileSystem implements IFileSystem {
     this.workingDirectory = oldWorkDir
   }
 
-  private parsePath(path: string) {
-
-  }
-
   private setWorkingDir(path: string) {
 
     const divided = path.split('/');
     console.log({ path, divided })
 
-    if (!divided[0].length) return;
+    if (!divided[0].length && divided.length <= 1) return;
 
     divided.map((symb, i) => {
+
+      console.log({ symb })
 
       // / handling
       if (i === 0 && symb === '') {
@@ -550,13 +548,32 @@ class FileSystem implements IFileSystem {
               }
             })
           }
-          console.log({ found, symb })
+          // console.log({ found, symb })
         })
         if (!found) console.log(`ERROR: No such directory: ${symb}`)
       }
     })
+  }
 
-    // this.workingDirectory.descriptor
+  symlink(path: string, name: string) {
+    console.log({ path, name })
+
+    const [blockNum] = this.selectFreeBlocks(1)
+
+    const sym: ISymLinkDescriptor = { id: this.id, name: name, size: 1, type: 'symlink', blockMap: { links: [blockNum] }, value: path }
+
+    this.memory[blockNum] = this.generateData();
+
+    this.bitMap[blockNum] = 1; // the first block is used for the root directory
+    this.id++;
+
+    this.files.push({descriptor: sym})
+    this.files.map(_ => {
+      if (this.workingDirectory.descriptor === _.descriptor.id && 'data' in _.descriptor) {
+        _.descriptor.data.push({descriptor: sym.id, name: sym.name})
+      }
+      return _
+    })
   }
 
   private getFile(path: string) {
@@ -868,6 +885,13 @@ const handleMultiCommands = (str: string): [string[], string] => {
         if (!mounted) break;
         const [name] = params;
         fs!.rmdir(name);
+        break;
+      }
+
+      case 'symlink': {
+        if (!mounted) break;
+        const [path, name] = params;
+        fs!.symlink(path, name);
         break;
       }
 
