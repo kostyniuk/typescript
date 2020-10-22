@@ -474,6 +474,33 @@ class FileSystem implements IFileSystem {
     console.log(`Moved to ${this.workingDirectory.name}`)
   }
 
+  rmdir(path: string) {
+
+    const oldWorkDir = deepCopy(this.workingDirectory) as IFileLink; // object in js/ts has the same position in memory, so to delete that connection we need need to use deepCopy 
+
+    console.log(this.workingDirectory)
+    let parent: IFileLink;
+    this.cd(path.split('/').join('/'))
+
+    this.files = this.files.filter(_ => {
+      if ('data' in _.descriptor && _.descriptor.id === this.workingDirectory.descriptor) {
+        parent = _.descriptor.parent;
+        if (!_.descriptor.data.length) return false
+        console.log('ERROR: This folder isn\'t empty')
+      }
+      return true;
+    })
+
+    this.files = this.files.map(_ => {
+      if ('data' in _.descriptor && _.descriptor.id === parent.descriptor) {
+        _.descriptor.data = _.descriptor.data.filter(el => (el.name !== this.workingDirectory.name))
+      }
+      return _
+    })
+
+    this.workingDirectory = oldWorkDir
+  }
+
   private parsePath(path: string) {
 
   }
@@ -602,7 +629,7 @@ class FileSystem implements IFileSystem {
     const requiredBlocks = this.calcBlocks(newSize)
 
     this.files = this.files.map(file => {
-      const current = file 
+      const current = file
       if ('names' in current.descriptor && current.descriptor.names.includes(name)) {
 
         while (requiredBlocks !== current.descriptor.blockMap.links.length) {
@@ -834,6 +861,13 @@ const handleMultiCommands = (str: string): [string[], string] => {
         if (!mounted) break;
         const [name] = params;
         fs!.mkdir(name);
+        break;
+      }
+
+      case 'rmdir': {
+        if (!mounted) break;
+        const [name] = params;
+        fs!.rmdir(name);
         break;
       }
 
