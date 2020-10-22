@@ -204,7 +204,7 @@ class FileSystem implements IFileSystem {
             return file
           })
           this.workingDirectory = oldWorkDir;
-          this.files.map(el => console.log(el))
+          // this.files.map(el => console.log(el))
           return fd
         }
       }
@@ -303,7 +303,6 @@ class FileSystem implements IFileSystem {
       if ('names' in file.descriptor && names.includes(fileName)) {
         if (file.descriptor.names.includes(fileName)) {
           descOriginFile = file.descriptor.id;
-          console.log({ descOriginFile })
           file.descriptor.names.push(name1)
           file.descriptor.linksNumber++;
         }
@@ -321,7 +320,6 @@ class FileSystem implements IFileSystem {
     this.files.map(file => {
       if ('data' in file.descriptor && file.descriptor.id === current.descriptor) {
         names = file.descriptor.data.map(tup => tup.name) // only files in this folder
-        console.log({ names })
       }
     });
     return names;
@@ -357,11 +355,11 @@ class FileSystem implements IFileSystem {
       return false
     })[0] as { descriptor: IOrdinarFileDescriptor }
 
-    console.log({ file })
+    // console.log({ file })
 
     this.files = this.files.map(_ => {
       if (_.descriptor.id === this.workingDirectory.descriptor && 'data' in _.descriptor) {
-        console.log(_.descriptor)
+        // console.log(_.descriptor)
         _.descriptor.data = _.descriptor.data.filter(el => (el.name !== fileName))
       }
       return _
@@ -381,17 +379,17 @@ class FileSystem implements IFileSystem {
           return !_.descriptor.names.includes(fileName);
         }
         if (_.descriptor.id === this.workingDirectory.descriptor && 'data' in _.descriptor) {
-          console.log(_.descriptor)
+          // console.log(_.descriptor)
           _.descriptor.data = _.descriptor.data.filter(el => (el.name !== fileName))
         }
         return _
       })
 
-      console.log(this.memory)
+      // console.log(this.memory)
       file.descriptor.blockMap.links.map(block => this.eraseBlock(block))
-      console.log('-------')
-      console.log(this.memory)
-      this.files.map(el => console.log(el))
+      // console.log('-------')
+      // console.log(this.memory)
+      // this.files.map(el => console.log(el))
 
       this.workingDirectory = oldWorkDir;
     }
@@ -417,7 +415,7 @@ class FileSystem implements IFileSystem {
       return false
     })[0] as { descriptor: IOrdinarFileDescriptor }
 
-    console.log({ file })
+    // console.log({ file })
 
     if (!file) {
       console.log('Wrong path provided');
@@ -482,21 +480,28 @@ class FileSystem implements IFileSystem {
     let parent: IFileLink;
     this.cd(path.split('/').join('/'))
 
+    let empty = false
+
     this.files = this.files.filter(_ => {
       if ('data' in _.descriptor && _.descriptor.id === this.workingDirectory.descriptor) {
         parent = _.descriptor.parent;
-        if (!_.descriptor.data.length) return false
+        if (!_.descriptor.data.length) {
+          empty = true;
+          return false;
+        }
         console.log('ERROR: This folder isn\'t empty')
       }
       return true;
     })
 
-    this.files = this.files.map(_ => {
-      if ('data' in _.descriptor && _.descriptor.id === parent.descriptor) {
-        _.descriptor.data = _.descriptor.data.filter(el => (el.name !== this.workingDirectory.name))
-      }
-      return _
-    })
+    if (empty) {
+      this.files = this.files.map(_ => {
+        if ('data' in _.descriptor && _.descriptor.id === parent.descriptor) {
+          _.descriptor.data = _.descriptor.data.filter(el => (el.name !== this.workingDirectory.name))
+        }
+        return _
+      })
+    }
 
     this.workingDirectory = oldWorkDir
   }
@@ -504,13 +509,12 @@ class FileSystem implements IFileSystem {
   private setWorkingDir(path: string) {
 
     const divided = path.split('/');
-    console.log({ path, divided })
 
-    if (!divided[0].length && divided.length <= 1) return;
+    const prepared = this.subtituteSym(divided).join('/').split('/')
 
-    divided.map((symb, i) => {
+    if (!prepared[0].length && prepared.length <= 2) return;
 
-      console.log({ symb })
+    prepared.map((symb, i) => {
 
       // / handling
       if (i === 0 && symb === '') {
@@ -555,8 +559,40 @@ class FileSystem implements IFileSystem {
     })
   }
 
+  private subtituteSym(path: string[]): string[] {
+    let ready: string[] = []
+
+    path.map(el => {
+      let added = false
+      if (el === '.' || el === '..') {
+        ready.push(el)
+        added = true
+        return;
+      } else {
+        this.files.map(file => {
+          if (('data' in file.descriptor && file.descriptor.name === el) || ('names' in file.descriptor && file.descriptor.names.includes(el))) {
+            ready.push(el);
+            added = true
+            return;
+          } else if ('value' in file.descriptor) { //symlink
+            console.log({ file2: file })
+            if (file.descriptor.name === el) {
+              const divided = file.descriptor.value.split('/');
+              if (divided[0] === '') ready = []
+              ready.push(file.descriptor.value)
+              added = true
+              return;
+            }
+          }
+        })
+      }
+      if (!added) ready.push(el);
+    })
+
+    return ready;
+  }
+
   symlink(path: string, name: string) {
-    console.log({ path, name })
 
     const [blockNum] = this.selectFreeBlocks(1)
 
@@ -567,10 +603,10 @@ class FileSystem implements IFileSystem {
     this.bitMap[blockNum] = 1; // the first block is used for the root directory
     this.id++;
 
-    this.files.push({descriptor: sym})
+    this.files.push({ descriptor: sym })
     this.files.map(_ => {
       if (this.workingDirectory.descriptor === _.descriptor.id && 'data' in _.descriptor) {
-        _.descriptor.data.push({descriptor: sym.id, name: sym.name})
+        _.descriptor.data.push({ descriptor: sym.id, name: sym.name })
       }
       return _
     })
@@ -585,7 +621,6 @@ class FileSystem implements IFileSystem {
     }
 
     return undefined;
-
   }
 
   private isFileExistsInCurDir(name: string): boolean {
